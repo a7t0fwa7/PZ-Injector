@@ -1,14 +1,58 @@
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
+#include <string>
 #include <Windows.h>
 
-const wchar_t* WINDOW_CLASS = L"GLFW30";
-const wchar_t* WINDOW_TITLE = L"Project Zomboid";
+const char* CONFIG_FILE_NAME = "config.ini";
+
+class Configuration {
+public:
+	Configuration()
+		: dllPattern("Prototype*.dll"), windowTitle("Project Zomboid") {
+		LoadConfiguration();
+	}
+
+	const std::string& GetDLLPattern() const {
+		return dllPattern;
+	}
+
+	const std::string& GetWindowTitle() const {
+		return windowTitle;
+	}
+
+private:
+	std::string dllPattern;
+	std::string windowTitle;
+
+	void LoadConfiguration() {
+		std::ifstream configFile(CONFIG_FILE_NAME);
+		if (configFile.is_open()) {
+			std::string line;
+			while (std::getline(configFile, line)) {
+				if (!line.empty() && line[0] != '#' && line.find('=') != std::string::npos) {
+					size_t separatorPos = line.find('=');
+					std::string key = line.substr(0, separatorPos);
+					std::string value = line.substr(separatorPos + 1);
+					if (key == "DllPattern") {
+						dllPattern = value;
+					}
+					else if (key == "WindowTitle") {
+						windowTitle = value;
+					}
+				}
+			}
+		}
+		else {
+			std::cerr << "Error: Failed to open configuration file. Using default values." << std::endl;
+		}
+	}
+};
 
 class HookManager {
 public:
-	HookManager(const wchar_t* dllPattern)
-		: dllName(FindPrototypeDLL(dllPattern)), hookHandle(nullptr), hookSet(false) {}
+	HookManager(const std::string& dllPattern, const std::string& windowTitle)
+		: dllPattern(dllPattern), windowTitle(windowTitle), hookHandle(nullptr), hookSet(false) {}
 
 	void SetHook() {
 		HMODULE dll = LoadDll();
@@ -31,10 +75,6 @@ public:
 			UnhookWindowsHookEx(hookHandle);
 			hookHandle = nullptr;
 		}
-		if (!dllName.empty()) {
-			FreeLibrary(GetModuleHandle(dllName.c_str()));
-			dllName.clear();
-		}
 		hookSet = false;
 	}
 
@@ -47,27 +87,28 @@ public:
 	}
 
 private:
-	std::wstring dllName;
+	std::string dllPattern;
+	std::string windowTitle;
 	HHOOK hookHandle;
 	bool hookSet;
 
-	std::wstring FindPrototypeDLL(const wchar_t* dllPattern) {
-		std::wstring dllName;
-		WIN32_FIND_DATA findData;
-		HANDLE hFind = FindFirstFile(dllPattern, &findData);
-		if (hFind != INVALID_HANDLE_VALUE) {
-			dllName = findData.cFileName;
-			FindClose(hFind);
-		}
-		return dllName;
-	}
-
 	HMODULE LoadDll() {
-		HMODULE dll = LoadLibraryEx(dllName.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-		if (dll == nullptr) {
-			DisplayErrorMessage("The DLL could not be found.");
+		std::wstring wideDllPattern(dllPattern.begin(), dllPattern.end());
+		WIN32_FIND_DATA findData;
+		HANDLE hFind = FindFirstFile(wideDllPattern.c_str(), &findData);
+		if (hFind != INVALID_HANDLE_VALUE) {
+			FindClose(hFind);
+			std::wstring wideDllName(findData.cFileName);
+			HMODULE dll = LoadLibraryEx(wideDllName.c_str(), nullptr, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+			if (dll == nullptr) {
+				DisplayErrorMessage("The DLL could not be found.");
+			}
+			return dll;
 		}
-		return dll;
+		else {
+			DisplayErrorMessage("No DLLs matching the pattern found.");
+			return nullptr;
+		}
 	}
 
 	HOOKPROC GetHookFunction(HMODULE dll) {
@@ -80,7 +121,7 @@ private:
 	}
 
 	HWND FindTargetWindow() {
-		HWND hwnd = FindWindowW(WINDOW_CLASS, nullptr);
+		HWND hwnd = FindWindowW(nullptr, std::wstring(windowTitle.begin(), windowTitle.end()).c_str());
 		if (hwnd == nullptr) {
 			DisplayErrorMessage("Could not find target window.");
 		}
@@ -99,18 +140,19 @@ void HideConsoleWindow() {
 }
 
 void WaitForWindowClose() {
-	while (FindWindowW(nullptr, WINDOW_TITLE) != nullptr) {
+	while (FindWindowW(nullptr, L"Project Zomboid") != nullptr) {
 		Sleep(1000);
 	}
 }
 
 int main() {
 	try {
-		HookManager hookManager(L"Prototype*.dll");
+		Configuration config;
+		HookManager hookManager(config.GetDLLPattern(), config.GetWindowTitle());
 		hookManager.SetHook();
 
 		if (hookManager.IsHookSet()) {
-			std::cout << "[»] DLL injected successfully!" << std::endl;
+			std::cout << "DLL injected successfully <3" << std::endl;
 
 			Sleep(2000);
 			HideConsoleWindow();
