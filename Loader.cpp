@@ -5,12 +5,15 @@
 #include <Windows.h>
 
 const char* CONFIG_FILE_NAME = "config.ini";
+const std::string DEFAULT_DLL_PATTERN = "Prototype*.dll";
+const std::string DEFAULT_WINDOW_TITLE = "Project Zomboid";
 
 class Configuration {
 public:
-	Configuration()
-		: dllPattern("Prototype*.dll"), windowTitle("Project Zomboid") {
-		LoadConfiguration();
+	Configuration() {
+		if (!LoadConfiguration()) {
+			CreateDefaultConfiguration();
+		}
 	}
 
 	const std::string& GetDLLPattern() const {
@@ -25,7 +28,7 @@ private:
 	std::string dllPattern;
 	std::string windowTitle;
 
-	void LoadConfiguration() {
+	bool LoadConfiguration() {
 		std::ifstream configFile(CONFIG_FILE_NAME);
 		if (configFile.is_open()) {
 			std::string line;
@@ -42,9 +45,21 @@ private:
 					}
 				}
 			}
+			return true;
+		}
+		return false;
+	}
+
+	void CreateDefaultConfiguration() {
+		std::ofstream configFile(CONFIG_FILE_NAME);
+		if (configFile.is_open()) {
+			configFile << "DllPattern=" << DEFAULT_DLL_PATTERN << std::endl;
+			configFile << "WindowTitle=" << DEFAULT_WINDOW_TITLE << std::endl;
+			dllPattern = DEFAULT_DLL_PATTERN;
+			windowTitle = DEFAULT_WINDOW_TITLE;
 		}
 		else {
-			std::cerr << "Error: Failed to open configuration file. Using default values." << std::endl;
+			throw std::runtime_error("Error: Failed to create default configuration file.");
 		}
 	}
 };
